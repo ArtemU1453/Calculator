@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, QTimer, QRegularExpre
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -29,7 +30,14 @@ from PySide6.QtWidgets import (
 )
 
 from app.calculator_logic import MAX_BIG_ROLL_LENGTH_M, calculate
-from app.db import clear_history, count_history, fetch_history, init_history_db, insert_history
+from app.db import (
+    clear_history,
+    count_history,
+    fetch_history,
+    get_data_dir,
+    init_history_db,
+    insert_history,
+)
 
 
 class CuttingView(QWidget):
@@ -168,6 +176,19 @@ class CuttingView(QWidget):
         painter.fillRect(margin + 190, legend_y, 12, 12, QColor("#3aa35c"))
         painter.drawText(margin + 206, legend_y + 10, "Доп.")
 
+        count_y = legend_y + 22
+        painter.setPen(QPen(QColor("#c9d1dc"), 1))
+        painter.drawText(
+            margin,
+            count_y + 12,
+            f"Основных: {main_count}",
+        )
+        painter.drawText(
+            margin + 170,
+            count_y + 12,
+            f"Доп.: {1 if additional_width else 0}",
+        )
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -210,6 +231,7 @@ class MainWindow(QMainWindow):
         self._bind_jamba_persistence()
 
         self.apply_style()
+        self._action_rows = []
         self._load_history()
         self._update_process_count()
         self._schedule_history_clear()
@@ -272,6 +294,7 @@ class MainWindow(QMainWindow):
 
     def _run_scheduled_history_clear(self):
         clear_history()
+        self._action_rows.clear()
         self._load_history()
         self._update_process_count()
         self._schedule_history_clear()
@@ -320,6 +343,16 @@ class MainWindow(QMainWindow):
         order_layout.addWidget(self.input_roll_width)
         order_layout.addWidget(self.input_roll_length)
         order_layout.addWidget(self.input_order)
+
+        self.additional_width_checkbox = QCheckBox("\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u044c \u0434\u043e\u043f. \u0440\u0430\u0437\u043c\u0435\u0440")
+        self.additional_width_checkbox.setObjectName("AdditionalCheck")
+        self.additional_width_checkbox.toggled.connect(self._toggle_additional_width)
+        order_layout.addWidget(self.additional_width_checkbox)
+
+        self.additional_width_input = self._labeled_input("\u0414\u043e\u043f. \u0440\u0430\u0437\u043c\u0435\u0440, \u043c\u043c")
+        self.additional_width_input.setEnabled(False)
+        order_layout.addWidget(self.additional_width_input)
+
         order_layout.addStretch(1)
 
         tabs.addTab(tab_roll, "Параметры Джамба")
@@ -330,10 +363,13 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         self.btn_clear = QPushButton("ОЧИСТИТЬ")
         self.btn_calc = QPushButton("РАССЧИТАТЬ")
+        self.btn_execute = QPushButton("\u0412\u042b\u041f\u041e\u041b\u041d\u0418\u0422\u042c")
         self.btn_clear.clicked.connect(self._clear)
         self.btn_calc.clicked.connect(self._calculate)
+        self.btn_execute.clicked.connect(self._execute)
         btn_row.addWidget(self.btn_clear)
         btn_row.addWidget(self.btn_calc)
+        btn_row.addWidget(self.btn_execute)
         layout.addLayout(btn_row)
 
         self.left_hint = QLabel(
@@ -409,9 +445,9 @@ class MainWindow(QMainWindow):
         h_layout.setSpacing(10)
 
         h_layout.addWidget(self._panel_title("ИСТОРИЯ"))
-        self.history_table = QTableWidget(0, 10)
+        self.history_table = QTableWidget(0, 9)
         self.history_table.setHorizontalHeaderLabels(
-            ["Время", "№ склада", "Код материала", "Ширина", "Рулон", "Площадь", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."]
+            ["Время", "№ склада", "Код материала", "Рулон", "Площадь", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."]
         )
         header = self.history_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
@@ -438,6 +474,7 @@ class MainWindow(QMainWindow):
         self.result_storage_add = self._result_row("Склад (доп.)", "0")
         self.result_linear = self._result_row("Расход материала, п.м.", "0")
         self.result_cycles = self._result_row("Количество циклов", "0")
+        self.result_time = self._result_row("\u0412\u0440\u0435\u043c\u044f (\u043e\u0446\u0435\u043d\u043a\u0430)", "\u043d/\u0434")
         self.result_total_area = self._result_row("Общая площадь", "0.0 м²")
         self.result_useful_area = self._result_row("Полезная площадь", "0.0 м²")
         self.result_waste_area = self._result_row("Отходы", "0.0 м²")
@@ -448,6 +485,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.result_storage_add)
         layout.addWidget(self.result_linear)
         layout.addWidget(self.result_cycles)
+        layout.addWidget(self.result_time)
         layout.addWidget(self.result_total_area)
         layout.addWidget(self.result_useful_area)
         layout.addWidget(self.result_waste_area)
@@ -500,6 +538,11 @@ class MainWindow(QMainWindow):
         inp.setObjectName("Input")
         return inp
 
+    def _toggle_additional_width(self, checked):
+        self.additional_width_input.setEnabled(checked)
+        if not checked:
+            self.additional_width_input.clear()
+
     def _result_row(self, label, value):
         row = QFrame()
         row.setObjectName("ResultRow")
@@ -525,6 +568,7 @@ class MainWindow(QMainWindow):
         self.input_roll_width.clear()
         self.input_roll_length.clear()
         self.input_order.clear()
+        self.additional_width_checkbox.setChecked(False)
         self.input_stock_number.clear()
         self.input_material_code.clear()
         self.cutting_view.set_data(None)
@@ -534,6 +578,7 @@ class MainWindow(QMainWindow):
         self._set_result_row(self.result_storage_add, "0")
         self._set_result_row(self.result_linear, "0")
         self._set_result_row(self.result_cycles, "0")
+        self._set_result_row(self.result_time, "\u043d/\u0434")
         self._set_result_row(self.result_total_area, "0.0 м²")
         self._set_result_row(self.result_useful_area, "0.0 м²")
         self._set_result_row(self.result_waste_area, "0.0 м²")
@@ -541,107 +586,192 @@ class MainWindow(QMainWindow):
 
     def _calculate(self):
         try:
-            self._apply_stock_number_format()
-            stock_number = self._format_stock_number(self.input_stock_number.text())
-            if stock_number is None:
-                self.status_label.setText("Неверный формат номера склада: 000/0000")
+            result, record, row = self._compute_result()
+            if result is None:
                 return
-            material = float(self.input_material.text())
-            useful = float(self.input_useful.text())
-            big_length = float(self.input_big_length.text())
-            roll_width = float(self.input_roll_width.text())
-            roll_length = float(self.input_roll_length.text())
-            order_rolls = int(self.input_order.text())
-
-            result = calculate(material, useful, roll_width, roll_length, big_length, order_rolls)
-
-            total_rolls = result["total_rolls"]
-            self._set_result_row(self.result_rolls, str(total_rolls))
-            self._set_result_row(
-                self.result_additional, f"{result['total_additional_rolls']} шт"
-            )
-            width_main = result["roll_width_mm"]
-            width_main_str = f"{width_main:.1f}".rstrip("0").rstrip(".")
-            additional_width = result["additional_width_mm"]
-            if additional_width:
-                width_add_str = f"{additional_width:.1f}".rstrip("0").rstrip(".")
-                add_label = f"{width_add_str} мм"
-            else:
-                add_label = "нет"
-            self._set_result_row(
-                self.result_storage_main, f"{result['surplus_main_rolls']} шт ({width_main_str} мм)"
-            )
-            self._set_result_row(
-                self.result_storage_add, f"{result['surplus_additional_rolls']} шт ({add_label})"
-            )
-            self._set_result_row(
-                self.result_cycles, f"{result['cycles_used']}"
-            )
-            self._set_result_row(
-                self.result_linear, f"{result['used_length_m']:.1f} м"
-            )
-            self._set_result_row(
-                self.result_total_area, f"{result['total_area_m2']:.1f} м²"
-            )
-            self._set_result_row(
-                self.result_useful_area, f"{result['useful_area_m2']:.1f} м²"
-            )
-            self._set_result_row(
-                self.result_waste_area, f"{result['waste_area_m2']:.1f} м²"
-            )
-
-            self.cutting_view.set_data(result)
-
-            record = {
-                "timestamp": datetime.now().strftime("%H:%M"),
-                "stock_number": stock_number,
-                "material_code": self.input_material_code.text().strip(),
-                "material_width": material,
-                "useful_width": useful,
-                "big_roll_length": big_length,
-                "roll_width": roll_width,
-                "roll_length": roll_length,
-                "main_count": result["main_count"],
-                "additional_width": result["additional_width_mm"] or 0,
-                "total_rolls": total_rolls,
-                "used_length_m": result["used_length_m"],
-                "surplus_rolls": result["surplus_rolls"],
-                "surplus_main_rolls": result["surplus_main_rolls"],
-                "surplus_additional_rolls": result["surplus_additional_rolls"],
-                "total_area": result["total_area_m2"],
-                "useful_area": result["useful_area_m2"],
-                "waste_area": result["waste_area_m2"],
-                "waste_percent": result["waste_percent"],
-            }
-            insert_history(record)
-            self._load_history()
-            self._update_process_count()
-            if result["shortage_rolls"] > 0:
-                self.status_label.setText(f"Не хватает {result['shortage_rolls']} рулонов")
-            else:
-                self.status_label.setText("Готово")
+            self._apply_result(result)
+            self._add_action_row("calc", row)
+            self._set_status_after_result(result, executed=False)
         except ValueError as exc:
             self.status_label.setText(str(exc))
         except Exception:
             self.status_label.setText("Ошибка ввода")
 
+    def _execute(self):
+        try:
+            result, record, row = self._compute_result()
+            if result is None:
+                return
+            self._apply_result(result)
+            insert_history(record)
+            self._add_action_row("exec", row)
+            self._update_process_count()
+            self._set_status_after_result(result, executed=True)
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+        except Exception:
+            self.status_label.setText("Ошибка ввода")
+
+    def _compute_result(self):
+        self._apply_stock_number_format()
+        stock_number = self._format_stock_number(self.input_stock_number.text())
+        if stock_number is None:
+            self.status_label.setText("Неверный формат номера склада: 000/0000")
+            return None, None, None
+        material = float(self.input_material.text())
+        useful = float(self.input_useful.text())
+        big_length = float(self.input_big_length.text())
+        roll_width = float(self.input_roll_width.text())
+        roll_length = float(self.input_roll_length.text())
+        order_rolls = int(self.input_order.text())
+
+        additional_width = None
+        if self.additional_width_checkbox.isChecked():
+            if not self.additional_width_input.text().strip():
+                self.status_label.setText("Введите доп. размер")
+                return None, None, None
+            additional_width = float(self.additional_width_input.text())
+
+        result = calculate(
+            material,
+            useful,
+            roll_width,
+            roll_length,
+            big_length,
+            order_rolls,
+            additional_width,
+        )
+
+        record = {
+            "timestamp": datetime.now().strftime("%H:%M"),
+            "stock_number": stock_number,
+            "material_code": self.input_material_code.text().strip(),
+            "material_width": material,
+            "useful_width": useful,
+            "big_roll_length": big_length,
+            "roll_width": roll_width,
+            "roll_length": roll_length,
+            "main_count": result["main_count"],
+            "additional_width": result["additional_width_mm"] or 0,
+            "total_rolls": result["total_rolls"],
+            "used_length_m": result["used_length_m"],
+            "surplus_rolls": result["surplus_rolls"],
+            "surplus_main_rolls": result["surplus_main_rolls"],
+            "surplus_additional_rolls": result["surplus_additional_rolls"],
+            "total_area": result["total_area_m2"],
+            "useful_area": result["useful_area_m2"],
+            "waste_area": result["waste_area_m2"],
+            "waste_percent": result["waste_percent"],
+        }
+
+        row = (
+            record["timestamp"],
+            record["stock_number"],
+            record["material_code"],
+            record["roll_width"],
+            record["useful_area"],
+            record["waste_percent"],
+            record["surplus_main_rolls"],
+            record["surplus_additional_rolls"],
+            record["used_length_m"],
+        )
+
+        return result, record, row
+
+    def _apply_result(self, result):
+        total_rolls = result["total_rolls"]
+        self._set_result_row(self.result_rolls, str(total_rolls))
+        self._set_result_row(
+            self.result_additional, f"{result['total_additional_rolls']} шт"
+        )
+        width_main = result["roll_width_mm"]
+        width_main_str = f"{width_main:.1f}".rstrip("0").rstrip(".")
+        additional_width = result["additional_width_mm"]
+        if additional_width:
+            width_add_str = f"{additional_width:.1f}".rstrip("0").rstrip(".")
+            add_label = f"{width_add_str} мм"
+        else:
+            add_label = "нет"
+        self._set_result_row(
+            self.result_storage_main, f"{result['surplus_main_rolls']} шт ({width_main_str} мм)"
+        )
+        self._set_result_row(
+            self.result_storage_add, f"{result['surplus_additional_rolls']} шт ({add_label})"
+        )
+        self._set_result_row(self.result_cycles, f"{result['cycles_used']}")
+        estimated_hours = result.get("estimated_hours")
+        if estimated_hours is None:
+            time_label = "\u043d/\u0434"
+        else:
+            total_minutes = int((estimated_hours * 60 + 2.5) // 5 * 5) + 15
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            time_label = f"{hours:02d} \u0447\u0430\u0441. {minutes:02d} \u043c\u0438\u043d."
+        self._set_result_row(self.result_time, time_label)
+        self._set_result_row(self.result_linear, f"{result['used_length_m']:.1f} м")
+        self._set_result_row(self.result_total_area, f"{result['total_area_m2']:.1f} м²")
+        self._set_result_row(self.result_useful_area, f"{result['useful_area_m2']:.1f} м²")
+        self._set_result_row(self.result_waste_area, f"{result['waste_area_m2']:.1f} м²")
+
+        self.cutting_view.set_data(result)
+
+    def _set_status_after_result(self, result, executed):
+        if result["shortage_rolls"] > 0:
+            self.status_label.setText(f"Не хватает {result['shortage_rolls']} рулонов")
+        else:
+            self.status_label.setText("Выполнено" if executed else "Рассчитано")
+
+    def _add_action_row(self, status, row):
+        self._action_rows.insert(0, (status, row))
+        if len(self._action_rows) > 20:
+            self._action_rows = self._action_rows[:20]
+        self._load_history()
+
     def _load_history(self):
-        rows = fetch_history(limit=20)
+        action_rows = list(self._action_rows)
+        remaining = max(0, 20 - len(action_rows))
+        db_rows = fetch_history(limit=remaining + len(action_rows))
+
+        executed_rows = [row for status, row in action_rows if status == "exec"]
+        filtered_db = []
+        for row in db_rows:
+            if row in executed_rows:
+                executed_rows.remove(row)
+                continue
+            filtered_db.append(row)
+            if len(filtered_db) >= remaining:
+                break
+
+        rows = [row for _, row in action_rows] + filtered_db
         self.history_table.setRowCount(0)
-        for row in rows:
-            row_idx = self.history_table.rowCount()
+        for row_idx, row in enumerate(rows):
             self.history_table.insertRow(row_idx)
             for col, value in enumerate(row):
                 item = QTableWidgetItem(str(value))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.history_table.setItem(row_idx, col, item)
+            if row_idx < len(action_rows):
+                status = action_rows[row_idx][0]
+                if status == "calc":
+                    self._style_history_row(row_idx, QColor("#d1a239"), QColor("#1b2028"))
+                else:
+                    self._style_history_row(row_idx, QColor("#3aa35c"), QColor("#f0f4ff"))
+            else:
+                self._style_history_row(row_idx, QColor("#3aa35c"), QColor("#f0f4ff"))
+
+    def _style_history_row(self, row_idx, background, foreground):
+        for col in range(self.history_table.columnCount()):
+            item = self.history_table.item(row_idx, col)
+            if item is not None:
+                item.setBackground(background)
+                item.setForeground(foreground)
 
     def _update_process_count(self):
         count = count_history()
         self.proc_label.setText(f"{count} процессов")
 
     def _export_report(self):
-        export_dir = os.path.join("data", "exports")
+        export_dir = os.path.join(get_data_dir(), "exports")
         os.makedirs(export_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.join(export_dir, f"report_{timestamp}.csv")
@@ -649,7 +779,7 @@ class MainWindow(QMainWindow):
         rows = fetch_history(limit=1000)
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["Время", "№ склада", "Код материала", "Ширина", "Рулон", "Площадь", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."])
+            writer.writerow(["Время", "№ склада", "Код материала", "Рулон", "Площадь", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."])
             for row in rows:
                 writer.writerow(row)
 
@@ -707,6 +837,24 @@ class MainWindow(QMainWindow):
                 padding: 8px 10px;
                 border-radius: 6px;
             }
+            QCheckBox#AdditionalCheck {
+                color: #cfd7e6;
+                spacing: 8px;
+            }
+            QCheckBox#AdditionalCheck::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QCheckBox#AdditionalCheck::indicator:unchecked {
+                border: 1px solid #3b4d69;
+                background: #1f2733;
+                border-radius: 3px;
+            }
+            QCheckBox#AdditionalCheck::indicator:checked {
+                border: 1px solid #2f63ff;
+                background: #2f63ff;
+                border-radius: 3px;
+            }
             QPushButton {
                 background: #2f63ff;
                 border-radius: 6px;
@@ -720,8 +868,34 @@ class MainWindow(QMainWindow):
                 background: #244fcb;
             }
             QPushButton#ClearButton {
+                background: #c53b3b;
+                color: #ffffff;
+            }
+            QPushButton#ClearButton:hover {
+                background: #d44747;
+            }
+            QPushButton#ClearButton:pressed {
+                background: #a93232;
+            }
+            QPushButton#CalcButton {
                 background: #d1a239;
                 color: #1d1d1d;
+            }
+            QPushButton#CalcButton:hover {
+                background: #e0b14b;
+            }
+            QPushButton#CalcButton:pressed {
+                background: #b58a2f;
+            }
+            QPushButton#ExecuteButton {
+                background: #3aa35c;
+                color: #ffffff;
+            }
+            QPushButton#ExecuteButton:hover {
+                background: #43b567;
+            }
+            QPushButton#ExecuteButton:pressed {
+                background: #2f8a4d;
             }
             #ResultRow {
                 background: #2a3546;
@@ -782,6 +956,8 @@ class MainWindow(QMainWindow):
             """
         )
         self.btn_clear.setObjectName("ClearButton")
+        self.btn_calc.setObjectName("CalcButton")
+        self.btn_execute.setObjectName("ExecuteButton")
 
 
 if __name__ == "__main__":

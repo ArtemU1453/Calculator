@@ -1,9 +1,32 @@
+import os
 import sqlite3
+import sys
 
-HISTORY_DB_PATH = "data/history.db"
+APP_NAME = "IndustrialCalculator"
 
 
-def init_history_db(db_path=HISTORY_DB_PATH):
+def _user_data_dir():
+    base_dir = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA") or os.path.expanduser("~")
+    return os.path.join(base_dir, APP_NAME)
+
+
+def get_data_dir():
+    if getattr(sys, "frozen", False):
+        data_dir = _user_data_dir()
+    else:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        data_dir = os.path.join(project_root, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def get_history_db_path():
+    return os.path.join(get_data_dir(), "history.db")
+
+
+def init_history_db(db_path=None):
+    if db_path is None:
+        db_path = get_history_db_path()
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute(
@@ -52,7 +75,9 @@ def init_history_db(db_path=HISTORY_DB_PATH):
     conn.close()
 
 
-def insert_history(record, db_path=HISTORY_DB_PATH):
+def insert_history(record, db_path=None):
+    if db_path is None:
+        db_path = get_history_db_path()
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute(
@@ -92,13 +117,15 @@ def insert_history(record, db_path=HISTORY_DB_PATH):
     conn.close()
 
 
-def fetch_history(limit=50, db_path=HISTORY_DB_PATH):
+def fetch_history(limit=50, db_path=None):
+    if db_path is None:
+        db_path = get_history_db_path()
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute(
         """
         SELECT timestamp, stock_number, material_code,
-               material_width, roll_width, useful_area, waste_percent,
+               roll_width, useful_area, waste_percent,
                surplus_main_rolls, surplus_additional_rolls, used_length_m
         FROM history
         ORDER BY id DESC
@@ -111,7 +138,9 @@ def fetch_history(limit=50, db_path=HISTORY_DB_PATH):
     return rows
 
 
-def count_history(db_path=HISTORY_DB_PATH):
+def count_history(db_path=None):
+    if db_path is None:
+        db_path = get_history_db_path()
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM history")
@@ -120,7 +149,9 @@ def count_history(db_path=HISTORY_DB_PATH):
     return count
 
 
-def clear_history(db_path=HISTORY_DB_PATH):
+def clear_history(db_path=None):
+    if db_path is None:
+        db_path = get_history_db_path()
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("DELETE FROM history")
