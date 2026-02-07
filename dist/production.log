@@ -1,0 +1,7 @@
+INFO:root:{'material_width': 910.0, 'main_width': 60.0, 'main_count': 14, 'additional_width': 55, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 268.5, 'waste_area': 4.5}
+INFO:root:{'material_width': 910.0, 'main_width': 104.0, 'main_count': 8, 'additional_width': 60, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 267.6, 'waste_area': 5.4}
+INFO:root:{'material_width': 910.0, 'main_width': 110.0, 'main_count': 8, 'additional_width': None, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 264.0, 'waste_area': 9.0}
+INFO:root:{'material_width': 910.0, 'main_width': 220.0, 'main_count': 4, 'additional_width': None, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 264.0, 'waste_area': 9.0}
+INFO:root:{'material_width': 910.0, 'main_width': 260.0, 'main_count': 3, 'additional_width': 110, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 267.0, 'waste_area': 6.0}
+INFO:root:{'material_width': 910.0, 'main_width': 310.0, 'main_count': 2, 'additional_width': 110, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 219.0, 'waste_area': 54.0}
+INFO:root:{'material_width': 910.0, 'main_width': 33.0, 'main_count': 27, 'additional_width': None, 'waste_per_side': 7.5, 'length': 300.0, 'total_area': 273.0, 'useful_area': 267.3, 'waste_area': 5.7}
