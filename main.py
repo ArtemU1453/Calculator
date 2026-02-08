@@ -318,9 +318,12 @@ class MainWindow(QMainWindow):
 
     def _schedule_history_clear(self):
         now = datetime.now(tz=self._get_minsk_tz())
-        next_run = now.replace(hour=0, minute=1, second=0, microsecond=0)
+        target_weekday = 4  # Friday
+        next_run = now.replace(hour=19, minute=0, second=0, microsecond=0)
+        days_ahead = (target_weekday - now.weekday()) % 7
+        next_run = next_run + timedelta(days=days_ahead)
         if now >= next_run:
-            next_run = next_run + timedelta(days=1)
+            next_run = next_run + timedelta(days=7)
         delay_ms = int((next_run - now).total_seconds() * 1000)
         QTimer.singleShot(delay_ms, self._run_scheduled_history_clear)
 
