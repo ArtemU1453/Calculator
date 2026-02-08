@@ -9,7 +9,15 @@ except Exception:
     ZoneInfo = None
 
 from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, QTimer, QRegularExpression
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QRegularExpressionValidator
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QRegularExpressionValidator,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -18,10 +26,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -29,7 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.calculator_logic import MAX_BIG_ROLL_LENGTH_M, calculate
+from app.calculator_logic import calculate
 from app.db import (
     clear_history,
     count_history,
@@ -56,6 +66,13 @@ class CuttingView(QWidget):
 
         if not self._result:
             return
+
+        base_font = self.font()
+        label_font = QFont(base_font)
+        label_font.setPointSize(max(base_font.pointSize() - 2, 10))
+        label_font.setBold(True)
+        legend_font = QFont(base_font)
+        legend_font.setPointSize(max(base_font.pointSize() - 1, 11))
 
         margin = 24
         bar_height = 70
@@ -108,9 +125,18 @@ class CuttingView(QWidget):
             painter.fillRect(rect, gradient)
             painter.setPen(QPen(QColor("#0f1420"), 1))
             painter.drawRect(rect)
-            if label:
-                painter.setPen(QPen(Qt.white, 1))
-                painter.drawText(rect, Qt.AlignCenter, label)
+            if label and w > 6:
+                fit_font = QFont(label_font)
+                metrics = QFontMetrics(fit_font)
+                text_width = metrics.horizontalAdvance(label)
+                while text_width > w - 6 and fit_font.pointSize() > 8:
+                    fit_font.setPointSize(fit_font.pointSize() - 1)
+                    metrics = QFontMetrics(fit_font)
+                    text_width = metrics.horizontalAdvance(label)
+                if text_width <= w - 4:
+                    painter.setFont(fit_font)
+                    painter.setPen(QPen(Qt.white, 1))
+                    painter.drawText(rect, Qt.AlignCenter, label)
             x += w
 
         if waste_per_side > 0:
@@ -163,6 +189,7 @@ class CuttingView(QWidget):
                 painter.drawEllipse(QPointF(max_x, line_y), radius, radius)
             painter.restore()
 
+        painter.setFont(legend_font)
         painter.setPen(QPen(QColor("#d3b26c"), 1))
         painter.drawText(margin, y - 12, f"{int(useful_width)} мм")
 
@@ -210,27 +237,36 @@ class MainWindow(QMainWindow):
         body.setHorizontalSpacing(12)
         body.setVerticalSpacing(12)
         body.setColumnStretch(0, 10)
-        body.setColumnStretch(1, 11)
-        body.setColumnStretch(2, 11)
-        body.setColumnStretch(3, 9)
+        body.setColumnStretch(1, 14)
+        body.setColumnStretch(2, 14)
+        body.setColumnStretch(3, 8)
+        body.setRowStretch(0, 3)
+        body.setRowStretch(1, 2)
+        self._body_layout = body
         root.addLayout(body)
 
         self.left_panel = self._build_left_panel()
+        self.left_actions_panel = self._build_left_actions_row()
+        self.left_container = QWidget()
+        left_layout = QVBoxLayout(self.left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+        left_layout.addWidget(self.left_panel)
+        left_layout.addWidget(self.left_actions_panel)
         self.center_panel = self._build_center_panel()
         self.right_panel = self._build_right_panel()
 
-        body.addWidget(self.left_panel, 0, 0, 2, 1)
+        body.addWidget(self.left_container, 0, 0, 1, 1)
         body.addWidget(self.center_panel, 0, 1, 1, 2)
         body.addWidget(self.right_panel, 0, 3, 2, 1)
-        body.addWidget(self.history_panel, 1, 1, 1, 2)
-
-        root.addWidget(self._build_footer())
+        body.addWidget(self.history_panel, 1, 0, 1, 3)
 
         self._settings = QSettings("Calculator", "ProductionCalculator")
         self._restore_jamba_inputs()
         self._bind_jamba_persistence()
 
         self.apply_style()
+        QTimer.singleShot(0, self._finalize_layout)
         self._action_rows = []
         self._load_history()
         self._update_process_count()
@@ -240,28 +276,23 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("Header")
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setContentsMargins(16, 8, 16, 8)
+        self._header_layout = layout
+        self._header_frame = header
 
-        title = QLabel("Калькулятор Производства")
-        title.setObjectName("HeaderTitle")
-        layout.addWidget(title)
+        self.header_title = QLabel("Калькулятор Производства")
+        self.header_title.setObjectName("HeaderTitle")
+        layout.addWidget(self.header_title)
 
         layout.addStretch(1)
+
+        self.date_label = QLabel()
+        self.date_label.setObjectName("HeaderDate")
+        layout.addWidget(self.date_label)
 
         self.clock_label = QLabel()
         self.clock_label.setObjectName("HeaderClock")
         layout.addWidget(self.clock_label)
-
-        for name, color in [
-            ("N", "#3aa35c"),
-            ("U", "#2f63ff"),
-            ("i", "#6c7a92"),
-            ("⏻", "#c53b3b"),
-        ]:
-            btn = QLabel(name)
-            btn.setObjectName("HeaderIcon")
-            btn.setProperty("accentColor", color)
-            layout.addWidget(btn)
 
         self._start_clock()
         return header
@@ -270,6 +301,7 @@ class MainWindow(QMainWindow):
         def tick():
             now = datetime.now()
             self.clock_label.setText(now.strftime("%H:%M"))
+            self.date_label.setText(now.strftime("%d.%m.%Y"))
 
         tick()
         timer = QTimer(self)
@@ -299,6 +331,12 @@ class MainWindow(QMainWindow):
         self._update_process_count()
         self._schedule_history_clear()
 
+    def _clear_history_clicked(self):
+        clear_history()
+        self._action_rows.clear()
+        self._load_history()
+        self._update_process_count()
+
     def _build_left_panel(self):
         panel = QFrame()
         panel.setObjectName("Panel")
@@ -310,13 +348,19 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         tabs.setObjectName("LeftTabs")
+        tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+        self.left_tabs = tabs
 
         tab_roll = QWidget()
         tab_order = QWidget()
         roll_layout = QVBoxLayout(tab_roll)
         order_layout = QVBoxLayout(tab_order)
-        roll_layout.setSpacing(8)
-        order_layout.setSpacing(8)
+        roll_layout.setSizeConstraint(QLayout.SetMinimumSize)
+        order_layout.setSizeConstraint(QLayout.SetMinimumSize)
+        roll_layout.setContentsMargins(0, 0, 0, 0)
+        order_layout.setContentsMargins(0, 0, 0, 0)
+        roll_layout.setSpacing(6)
+        order_layout.setSpacing(6)
 
         self.input_stock_number = self._labeled_input("Порядковый номер складского учета")
         self.input_material_code = self._labeled_input("Код материала")
@@ -360,25 +404,26 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(tabs)
 
-        btn_row = QHBoxLayout()
         self.btn_clear = QPushButton("ОЧИСТИТЬ")
         self.btn_calc = QPushButton("РАССЧИТАТЬ")
         self.btn_execute = QPushButton("\u0412\u042b\u041f\u041e\u041b\u041d\u0418\u0422\u042c")
         self.btn_clear.clicked.connect(self._clear)
         self.btn_calc.clicked.connect(self._calculate)
         self.btn_execute.clicked.connect(self._execute)
-        btn_row.addWidget(self.btn_clear)
-        btn_row.addWidget(self.btn_calc)
-        btn_row.addWidget(self.btn_execute)
-        layout.addLayout(btn_row)
-
-        self.left_hint = QLabel(
-            f"Максимальная длина Джамба: {MAX_BIG_ROLL_LENGTH_M} м"
-        )
-        self.left_hint.setObjectName("Hint")
-        layout.addWidget(self.left_hint)
 
         layout.addStretch(1)
+        return panel
+
+    def _build_left_actions_row(self):
+        panel = QWidget()
+        panel.setObjectName("LeftActions")
+        panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout = QHBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.btn_clear)
+        layout.addWidget(self.btn_calc)
+        layout.addWidget(self.btn_execute)
         return panel
 
     def _jamba_fields(self):
@@ -435,27 +480,34 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._panel_title("ВИЗУАЛЬНАЯ СХЕМА НАРЕЗКИ"))
 
         self.cutting_view = CuttingView()
-        self.cutting_view.setMinimumHeight(220)
+        self.cutting_view.setMinimumHeight(240)
         layout.addWidget(self.cutting_view)
 
         self.history_panel = QFrame()
         self.history_panel.setObjectName("Panel")
+        self.history_panel.setMinimumHeight(220)
         h_layout = QVBoxLayout(self.history_panel)
         h_layout.setContentsMargins(16, 16, 16, 16)
         h_layout.setSpacing(10)
 
-        h_layout.addWidget(self._panel_title("ИСТОРИЯ"))
+        h_layout.addWidget(self._panel_title("ИСТОРИЯ РАСЧЕТОВ"))
         self.history_table = QTableWidget(0, 9)
         self.history_table.setHorizontalHeaderLabels(
-            ["Время", "№ склада", "Код материала", "Рулон", "Площадь", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."]
+            ["Время", "№ склада", "Код материала", "Рулон, шт.", "Площадь, м.кв.", "Отход (%)", "Склад (осн.)", "Склад (доп.)", "Расход, п.м."]
         )
         header = self.history_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setMinimumSectionSize(90)
         self.history_table.verticalHeader().setVisible(False)
+        self.history_table.verticalHeader().setDefaultSectionSize(28)
         self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.history_table.setSelectionMode(QTableWidget.NoSelection)
         self.history_table.setObjectName("HistoryTable")
         h_layout.addWidget(self.history_table)
+
+        self.btn_clear_history = QPushButton("ОЧИСТИТЬ ИСТОРИЮ РАСЧЕТОВ")
+        self.btn_clear_history.clicked.connect(self._clear_history_clicked)
+        h_layout.addWidget(self.btn_clear_history)
 
         return panel
 
@@ -513,20 +565,6 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         return panel
 
-    def _build_footer(self):
-        footer = QFrame()
-        footer.setObjectName("Footer")
-        layout = QHBoxLayout(footer)
-        layout.setContentsMargins(16, 6, 16, 6)
-        self.footer_left = QLabel("ID: 001")
-        self.footer_left.setObjectName("FooterText")
-        self.footer_right = QLabel(datetime.now().strftime("%d.%m.%Y   %H:%M"))
-        self.footer_right.setObjectName("FooterText")
-        layout.addWidget(self.footer_left)
-        layout.addStretch(1)
-        layout.addWidget(self.footer_right)
-        return footer
-
     def _panel_title(self, text):
         label = QLabel(text)
         label.setObjectName("PanelTitle")
@@ -535,8 +573,83 @@ class MainWindow(QMainWindow):
     def _labeled_input(self, placeholder):
         inp = QLineEdit()
         inp.setPlaceholderText(placeholder)
+        inp.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         inp.setObjectName("Input")
         return inp
+
+    def _adapt_sizes_to_text(self):
+        self._adapt_header_height()
+        line_edits = [
+            self.input_stock_number,
+            self.input_material_code,
+            self.input_material,
+            self.input_useful,
+            self.input_big_length,
+            self.input_roll_width,
+            self.input_roll_length,
+            self.input_order,
+            self.additional_width_input,
+        ]
+        for edit in line_edits:
+            fm = edit.fontMetrics()
+            min_h = max(edit.sizeHint().height(), int(fm.height() * 2.0))
+            edit.setMinimumHeight(min_h)
+
+        buttons = [self.btn_clear, self.btn_calc, self.btn_execute, self.btn_export]
+        for button in buttons:
+            fm = button.fontMetrics()
+            min_h = max(button.sizeHint().height(), int(fm.height() * 1.3))
+            button.setMinimumHeight(min_h)
+
+        fm = self.additional_width_checkbox.fontMetrics()
+        min_h = max(
+            self.additional_width_checkbox.sizeHint().height(), int(fm.height() * 1.4)
+        )
+        self.additional_width_checkbox.setMinimumHeight(min_h)
+
+        self._update_tabs_min_height()
+
+    def _update_tabs_min_height(self):
+        if not hasattr(self, "left_tabs"):
+            return
+        tab_bar_h = self.left_tabs.tabBar().sizeHint().height()
+        page_heights = []
+        for i in range(self.left_tabs.count()):
+            page = self.left_tabs.widget(i)
+            if page is not None:
+                page_heights.append(page.sizeHint().height())
+        if page_heights:
+            self.left_tabs.setMinimumHeight(tab_bar_h + max(page_heights) + 12)
+
+    def _adapt_header_height(self):
+        if not hasattr(self, "_header_layout"):
+            return
+        title_fm = self.header_title.fontMetrics()
+        clock_fm = self.clock_label.fontMetrics()
+        date_fm = self.date_label.fontMetrics()
+        text_h = max(title_fm.height(), clock_fm.height(), date_fm.height())
+        icon_size = 0
+        v_pad = max(4, int(text_h * 0.25))
+        self._header_layout.setContentsMargins(12, v_pad, 12, v_pad)
+        header_min = max(text_h + v_pad * 2, icon_size + v_pad * 2)
+        self._header_frame.setMinimumHeight(header_min)
+
+    def _sync_layout_minimums(self):
+        if not hasattr(self, "_body_layout"):
+            return
+        left_widget = self.left_container if hasattr(self, "left_container") else self.left_panel
+        row0_min = max(
+            left_widget.sizeHint().height(),
+            self.center_panel.sizeHint().height(),
+        )
+        self._body_layout.setRowMinimumHeight(0, row0_min)
+
+    def _finalize_layout(self):
+        self._adapt_sizes_to_text()
+        self._sync_layout_minimums()
+        needed = self.sizeHint().height()
+        if needed > self.minimumHeight():
+            self.setMinimumHeight(needed)
 
     def _toggle_additional_width(self, checked):
         self.additional_width_input.setEnabled(checked)
@@ -792,7 +905,7 @@ class MainWindow(QMainWindow):
                 background: #1b2028;
                 color: #d6deea;
                 font-family: "Segoe UI";
-                font-size: 13px;
+                font-size: 14px;
             }
             #Header {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -801,23 +914,16 @@ class MainWindow(QMainWindow):
                 border-radius: 8px;
             }
             #HeaderTitle {
-                font-size: 16px;
+                font-size: 18px;
                 letter-spacing: 1px;
             }
             #HeaderClock {
-                font-size: 16px;
-                margin-right: 8px;
+                font-size: 17px;
+                margin-left: 10px;
             }
-            #HeaderIcon {
-                min-width: 28px;
-                min-height: 28px;
-                max-width: 28px;
-                max-height: 28px;
-                border-radius: 14px;
-                background: #263041;
-                border: 1px solid #4c5f7a;
-                qproperty-alignment: AlignCenter;
-                margin-left: 6px;
+            #HeaderDate {
+                font-size: 17px;
+                color: #b9c7dd;
             }
             #Panel {
                 background: #263041;
@@ -825,7 +931,7 @@ class MainWindow(QMainWindow):
                 border-radius: 10px;
             }
             #PanelTitle {
-                font-size: 14px;
+                font-size: 15px;
                 padding: 6px 10px;
                 background: #2d3848;
                 border-radius: 6px;
@@ -834,7 +940,7 @@ class MainWindow(QMainWindow):
             #Input {
                 background: #1f2733;
                 border: 1px solid #3b4d69;
-                padding: 8px 10px;
+                padding: 2px 10px;
                 border-radius: 6px;
             }
             QCheckBox#AdditionalCheck {
@@ -858,7 +964,7 @@ class MainWindow(QMainWindow):
             QPushButton {
                 background: #2f63ff;
                 border-radius: 6px;
-                padding: 8px 12px;
+                padding: 5px 10px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -903,9 +1009,10 @@ class MainWindow(QMainWindow):
             }
             #ResultLabel {
                 color: #9fb0c8;
+                font-size: 13px;
             }
             #ResultValue {
-                font-size: 16px;
+                font-size: 15px;
                 color: #f0f4ff;
             }
             #StatusLabel {
@@ -935,6 +1042,14 @@ class MainWindow(QMainWindow):
             #HistoryTable {
                 background: #1f2733;
                 gridline-color: #33465f;
+                border: none;
+                font-size: 13px;
+            }
+            QHeaderView::section {
+                background: #2d3848;
+                color: #cfd7e6;
+                padding: 6px;
+                font-size: 12px;
                 border: none;
             }
             #LeftTabs::pane {
